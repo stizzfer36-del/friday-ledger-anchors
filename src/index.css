@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: #06090E;
+    color: #E2E8F0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #06090E; }
+  ::-webkit-scrollbar-thumb { background: #1A2D40; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #274359; }
+
+  /* Mono for all numeric-looking content */
+  .font-num { font-family: 'JetBrains Mono', monospace; }
+}
+
+@layer components {
+  /* ── Cards ─────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface-raised rounded-lg border border-border-default;
+  }
+  .card-elevated {
+    @apply bg-surface-elevated rounded-lg border border-border-default shadow-card;
+  }
+
+  /* ── EV badge ──────────────────────────────────────────────────────────── */
+  .ev-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold uppercase tracking-wide;
+  }
+  .ev-strong  { @apply ev-badge bg-ev-strong/10  text-ev-strong  border border-ev-strong/25; }
+  .ev-good    { @apply ev-badge bg-ev-good/10    text-ev-good    border border-ev-good/25; }
+  .ev-lean    { @apply ev-badge bg-ev-lean/10    text-ev-lean    border border-ev-lean/25; }
+  .ev-neutral { @apply ev-badge bg-border-default text-slate-400  border border-border-default; }
+  .ev-fade    { @apply ev-badge bg-ev-fade/10    text-ev-fade    border border-ev-fade/25; }
+  .ev-skip    { @apply ev-badge bg-ev-skip/10    text-slate-500  border border-border-subtle; }
+
+  /* ── Confidence badge ──────────────────────────────────────────────────── */
+  .conf-high   { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-positive/10 text-positive border border-positive/20; }
+  .conf-medium { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning border border-warning/20; }
+  .conf-low    { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-stale/10 text-stale border border-stale/20; }
+
+  /* ── Injury dot ────────────────────────────────────────────────────────── */
+  .inj-dot {
+    @apply w-2 h-2 rounded-full inline-block flex-shrink-0;
+  }
+  .inj-healthy    { @apply inj-dot bg-positive; }
+  .inj-probable   { @apply inj-dot bg-positive/60; }
+  .inj-questionable { @apply inj-dot bg-warning animate-pulse; }
+  .inj-doubtful   { @apply inj-dot bg-ev-fade/80 animate-pulse; }
+  .inj-out        { @apply inj-dot bg-ev-fade; }
+  .inj-unknown    { @apply inj-dot bg-slate-600; }
+
+  /* ── Inputs ────────────────────────────────────────────────────────────── */
+  .input {
+    @apply bg-surface-elevated border border-border-default rounded-lg px-3 py-2
+           text-sm text-slate-200 placeholder-slate-600
+           focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500
+           transition-colors;
+  }
+
+  /* ── Buttons ───────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           font-medium text-sm transition-all duration-150 active:scale-[0.98];
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-900/40;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-surface-elevated text-slate-400 hover:text-slate-200
+           border border-transparent hover:border-border-default;
+  }
+  .btn-outline {
+    @apply btn bg-transparent hover:bg-surface-elevated text-slate-300
+           border border-border-default hover:border-border-bright;
+  }
+
+  /* ── Stat row ──────────────────────────────────────────────────────────── */
+  .stat-row {
+    @apply flex items-center justify-between py-2.5 border-b border-border-subtle last:border-0;
+  }
+
+  /* ── Nav item ──────────────────────────────────────────────────────────── */
+  .nav-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-500
+           hover:text-slate-200 hover:bg-surface-elevated transition-all;
+  }
+  .nav-link.active {
+    @apply text-brand-400 bg-brand-600/15;
+  }
+
+  /* ── Hit rate bar ──────────────────────────────────────────────────────── */
+  .hit-bar-track { @apply h-1 bg-surface-overlay rounded-full overflow-hidden; }
+  .hit-bar-fill  { @apply h-full rounded-full transition-all; }
+
+  /* ── Live pulse ────────────────────────────────────────────────────────── */
+  .live-dot {
+    @apply relative inline-flex h-2 w-2;
+  }
+  .live-dot::before {
+    content: '';
+    @apply animate-ping absolute inline-flex h-full w-full rounded-full bg-ev-strong opacity-60;
+  }
+  .live-dot::after {
+    content: '';
+    @apply relative inline-flex rounded-full h-2 w-2 bg-ev-strong;
+  }
+
+  /* ── Section label ─────────────────────────────────────────────────────── */
+  .section-label {
+    @apply text-xs font-semibold text-slate-600 uppercase tracking-widest;
+  }
+
+  /* ── Data table ────────────────────────────────────────────────────────── */
+  .data-table { @apply w-full text-sm; }
+  .data-table th { @apply text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-border-subtle; }
+  .data-table td { @apply px-4 py-3.5 border-b border-border-subtle/50; }
+  .data-table tr:hover td { @apply bg-surface-elevated/50; }
+  .data-table tr:last-child td { @apply border-0; }
+}
+
+/* ── Live ticker marquee ───────────────────────────────────────────────────── */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 90s linear infinite;
+}
+.ticker-track:hover { animation-play-state: paused; }
+
+@layer utilities {
+  /* EV glow utilities */
+  .glow-ev    { box-shadow: 0 0 12px rgba(0,255,157,0.2); }
+  .glow-brand { box-shadow: 0 0 12px rgba(59,130,246,0.2); }
+  .glow-warn  { box-shadow: 0 0 12px rgba(245,158,11,0.2); }
+
+  /* Text gradient */
+  .text-gradient-ev {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-ev-strong to-ev-good;
+  }
+  .text-gradient-brand {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-brand-400 to-brand-300;
+  }
+
+  /* Glass surface */
+  .glass { backdrop-filter: blur(12px); background: rgba(12,17,24,0.8); }
+}

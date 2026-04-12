@@ -1,0 +1,18 @@
+[
+  {
+    "id": "aece93b0-54b5-47e0-935d-f092e0649988",
+    "type": "win",
+    "amount": 25,
+    "note": "Nikola Jokic Points ✓",
+    "pickId": "e49fca1e-4343-4c5f-b442-f61342683b87",
+    "createdAt": "2026-04-11T12:15:57.671Z"
+  },
+  {
+    "id": "b3ac25b8-4d0a-43cf-9965-3143f4267681",
+    "type": "loss",
+    "amount": -0.2,
+    "note": "Stephen Curry 3-PT Made ✗",
+    "pickId": "8665c6ec-d7c3-421f-a235-8632fd877b22",
+    "createdAt": "2026-04-11T20:34:50.961Z"
+  }
+]
