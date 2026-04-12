@@ -6,12 +6,17 @@ import { fetchAllLines } from './prizepicks.js'
 import { fetchNBAPlayerMap } from './nbaStats.js'
 import { fetchInjuryMap } from './espnInjuries.js'
 import { enrichLines } from './evEngine.js'
+import { generateDailySlip } from './dailySlip.js'
+import { settlePendingPicks } from './settlementService.js'
 import {
   setLiveLines,
   setNBAPlayerMap,
   setInjuryMap,
   setLastRefresh,
 } from '../store.js'
+
+// Track previous line snapshot for movement detection
+let previousLineSnapshot = {}  // id → line value
 
 let isRefreshing = false
 
@@ -33,8 +38,15 @@ export async function runFullRefresh() {
     setLastRefresh('injuries')
 
     const enriched = await enrichLines(rawLines)
+
+    // Detect line movements since last snapshot
+    detectLineMovements(enriched)
+
     setLiveLines(enriched)
     setLastRefresh('lines')
+
+    // Regenerate daily slip after every line refresh
+    generateDailySlip()
 
     const elapsed = Date.now() - start
     console.log(`[scheduler] Refresh complete — ${enriched.length} lines in ${elapsed}ms`)
@@ -109,5 +121,50 @@ export function startScheduler() {
     refreshNBAStats()
   })
 
+  // Auto-settle pending picks every hour (checks for completed games)
+  cron.schedule('5 * * * *', () => {
+    console.log('[scheduler] Cron: auto-settlement')
+    settlePendingPicks()
+  })
+
+  // Daily slip fresh generation at 8am
+  cron.schedule('0 8 * * *', () => {
+    console.log('[scheduler] Cron: daily slip generation')
+    generateDailySlip()
+  })
+
   console.log('[scheduler] Scheduled jobs started')
+}
+
+// ── Line movement detection ───────────────────────────────────────────────────
+export function detectLineMovements(newLines) {
+  const moved = []
+
+  newLines.forEach(line => {
+    const prev = previousLineSnapshot[line.id]
+    if (prev != null && prev !== line.line) {
+      const delta = line.line - prev
+      moved.push({
+        id: line.id,
+        playerName: line.playerName,
+        statType: line.statType,
+        sport: line.sport,
+        from: prev,
+        to: line.line,
+        delta: parseFloat(delta.toFixed(1)),
+        direction: delta > 0 ? 'up' : 'down',
+      })
+    }
+    previousLineSnapshot[line.id] = line.line
+  })
+
+  if (moved.length > 0) {
+    console.log(`[scheduler] ${moved.length} line movements detected`)
+    // Store movements for the alerts endpoint
+    import('../store.js').then(({ setLineMovementAlerts }) => {
+      if (setLineMovementAlerts) setLineMovementAlerts(moved)
+    }).catch(() => {})
+  }
+
+  return moved
 }

@@ -49,4 +49,8 @@ export const useStore = create((set, get) => ({
   setBackendOnline: (v) => set({ backendOnline: v }),
   lastRefresh: null,
   setLastRefresh: (v) => set({ lastRefresh: v }),
+
+  // ── Line alerts ───────────────────────────────────────────────────────────────
+  lineAlerts: [],
+  setLineAlerts: (alerts) => set({ lineAlerts: alerts }),
 }))

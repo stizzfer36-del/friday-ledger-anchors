@@ -171,6 +171,9 @@ function buildFallbackPlayerMap() {
 }
 
 // ── Fallback game log generator (realistic variance around season avg) ─────────
+// NOTE: All logs generated here are synthetic — based on hardcoded season averages
+// with artificial variance. These are PRIOR estimates, not real game logs.
+// Marked with _mock: true so the EV engine can cap confidence appropriately.
 export function generateFallbackGameLog(playerName, statType, line) {
   const resolver = getStatResolver(statType)
   if (!resolver) return []
@@ -225,6 +228,7 @@ function generateNBALog(key, statType, line) {
       stl:  Math.round(v('stl')  * 2) / 2,
       blk:  Math.round(v('blk')  * 2) / 2,
       fg3m: Math.floor(v('fg3m')),
+      _mock: true,
     }
   })
 }
@@ -287,6 +291,7 @@ function generateGenericLog(key, statType, line) {
       pts: value,  // keep pts for NBA resolver compat
       reb: 0, ast: 0, stl: 0, blk: 0, fg3m: 0,
       value,
+      _mock: true,
     }
   })
 }

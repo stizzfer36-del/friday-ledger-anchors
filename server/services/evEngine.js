@@ -12,6 +12,7 @@ import {
   getInjuryStatus,
   recordLineHistory,
   getLineMovement,
+  getCalibration,
 } from '../store.js'
 
 import {
@@ -130,16 +131,23 @@ async function enrichLine(line) {
     const stalenessFactor = Math.max(0, 1 - ageMs / STALE_THRESHOLD_MS)
     const isStale = ageMs > STALE_THRESHOLD_MS
 
-    // ── EV score ──────────────────────────────────────────────────────────────
+    // ── Raw EV score (pre-calibration) ────────────────────────────────────────
     const evScore = parseFloat((edge * sampleConfidence * stalenessFactor).toFixed(1))
 
     // ── Injury status ─────────────────────────────────────────────────────────
     const injury = getInjuryStatus(line.playerName)
     const injuryPenalty = getInjuryPenalty(injury.status)
-    const adjustedEvScore = parseFloat((evScore * injuryPenalty).toFixed(1))
+
+    // ── Calibration layer ────────────────────────────────────────────────────
+    // Reads settled user picks to blend personal hit rate into the EV score.
+    // Uses isMockData to prevent HIGH confidence on synthetic game logs.
+    const isMockData = logs.some(g => g._mock)
+    const calResult = computeCalibration(line.sport, line.statType, edge)
+    const blendedEdge = blendEdgeWithCalibration(edge, calResult)
+    const adjustedEvScore = parseFloat((blendedEdge * sampleConfidence * stalenessFactor * injuryPenalty).toFixed(1))
 
     // ── Confidence label ──────────────────────────────────────────────────────
-    const confidence = getConfidenceLabel(sampleSize, injury.status, isStale, consistency.label)
+    const confidence = getConfidenceLabel(sampleSize, injury.status, isStale, consistency.label, isMockData)
 
     // ── Recommendation label ──────────────────────────────────────────────────
     const recommendation = getRecommendation(adjustedEvScore, confidence)
@@ -221,6 +229,8 @@ async function enrichLine(line) {
       recentGames,
       lineMovement,
       dataSource: source,
+      isMockData,
+      calibration: calResult,
       calculatedAt: new Date().toISOString(),
       contextFactors,
       consistency,
@@ -387,14 +397,66 @@ function getInjuryPenalty(status) {
   return { healthy: 1.0, probable: 0.95, questionable: 0.6, doubtful: 0.2, out: 0, unknown: 0.85 }[status] ?? 0.85
 }
 
-function getConfidenceLabel(sampleSize, injuryStatus, isStale, consistencyLabel) {
+function getConfidenceLabel(sampleSize, injuryStatus, isStale, consistencyLabel, isMockData = false) {
   if (injuryStatus === 'out' || injuryStatus === 'doubtful') return 'INVALID'
   if (isStale) return 'LOW'
   if (injuryStatus === 'questionable') return 'LOW'
   if (consistencyLabel === 'LOW') return 'LOW'
+  // Mock/synthetic data can never reach HIGH confidence — model priors only
+  if (isMockData) return 'MEDIUM'
   if (sampleSize >= TARGET_SAMPLE && injuryStatus === 'healthy' && consistencyLabel === 'HIGH') return 'HIGH'
   if (sampleSize >= 10) return 'MEDIUM'
   return 'LOW'
+}
+
+// ── Calibration: blend model edge with personal hit-rate history ───────────────
+/**
+ * Reads settled picks from store and computes personal calibration for a
+ * given {sport, statType} combination.
+ *
+ * Returns:
+ *   state: 'PRIOR' | 'CALIBRATING' | 'CALIBRATED'
+ *   n: number of settled picks used
+ *   personalHitRate: actual hit rate (null if PRIOR)
+ *   personalEdge: (hitRate - 0.5) * 100, null if PRIOR
+ */
+function computeCalibration(sport, statType, modelEdge) {
+  const cal = getCalibration()
+
+  // Try most specific first: same sport + same statType
+  const statKey = statType
+  const statCal = cal.byStatType[statKey]
+  const sportCal = cal.bySport[sport]
+
+  let bestCal = null
+  if (statCal && statCal.picks >= 5) bestCal = statCal
+  else if (sportCal && sportCal.picks >= 5) bestCal = sportCal
+
+  if (!bestCal || bestCal.picks < 5) {
+    return { state: 'PRIOR', n: 0, personalHitRate: null, personalEdge: null }
+  }
+
+  const n = bestCal.picks
+  const personalHitRate = parseFloat(bestCal.hitRate.toFixed(3))
+  const personalEdge = parseFloat(((personalHitRate - 0.5) * 100).toFixed(1))
+  const state = n >= 30 ? 'CALIBRATED' : 'CALIBRATING'
+
+  return { state, n, personalHitRate, personalEdge }
+}
+
+/**
+ * Blends model edge with personal calibration edge.
+ * - PRIOR: use model edge as-is
+ * - CALIBRATING (5–29 picks): 70% model, 30% personal
+ * - CALIBRATED (30+ picks): 30% model, 70% personal
+ */
+function blendEdgeWithCalibration(modelEdge, calResult) {
+  if (calResult.state === 'PRIOR' || calResult.personalEdge == null) {
+    return modelEdge
+  }
+  const personalEdge = calResult.personalEdge
+  const weight = calResult.state === 'CALIBRATED' ? 0.7 : 0.3
+  return parseFloat((modelEdge * (1 - weight) + personalEdge * weight).toFixed(2))
 }
 
 function getRecommendation(evScore, confidence) {

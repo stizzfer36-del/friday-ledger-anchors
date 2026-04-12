@@ -27,6 +27,7 @@ const live = {
   gameLogCache: {},       // nbaId → { logs: [...], fetchedAt }
   injuryMap: {},          // playerName (lowercase) → { status, reason, updatedAt }
   lineHistory: {},        // `${playerName}|${statType}` → [{ line, timestamp }] (last 10)
+  recentLineMovements: [], // last detected movements (for alerts endpoint)
   lastRefresh: {
     lines: null,
     injuries: null,
@@ -123,6 +124,12 @@ export function deleteAlert(id) {
   persisted.alerts = persisted.alerts.filter(a => a.id !== id)
   saveJSON(ALERTS_FILE, persisted.alerts)
 }
+
+// ── Line movement alerts ──────────────────────────────────────────────────────
+export function setLineMovementAlerts(movements) {
+  live.recentLineMovements = movements
+}
+export function getLineMovementAlerts() { return live.recentLineMovements }
 
 // ── Calibration helper ────────────────────────────────────────────────────────
 export function getCalibration() {
