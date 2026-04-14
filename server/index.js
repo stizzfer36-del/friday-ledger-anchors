@@ -51,6 +51,14 @@ import {
 } from './store.js'
 import { runFullRefresh, refreshNBAStats, startScheduler, addSSEClient, removeSSEClient } from './services/scheduler.js'
 import { buildOptimalSlip } from './services/autoSlip.js'
+import { ensureDefaultEvaluationSpec, getActiveEvaluationSpec } from './services/ledger/evaluationSpec.js'
+import { anchorChainHead } from './services/ledger/anchor.js'
+import { createPredictionsForLines, getLedgerSummary, getPredictionById, getPredictionDisagreement } from './services/ledger/predictions.js'
+import { settleLedgerPredictions } from './services/ledger/settlement.js'
+import { verifyPrediction } from './services/ledger/verifier.js'
+import { getChainHead } from './services/ledger/chain.js'
+
+import cron from 'node-cron'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -588,7 +596,8 @@ app.get('/api/line-alerts', optionalAuth, (req, res) => {
 app.post('/api/settle', async (req, res) => {
   const { settlePendingPicks } = await import('./services/settlementService.js')
   const result = await settlePendingPicks()
-  res.json({ ...result, triggeredAt: new Date().toISOString() })
+  const ledger = await settleLedgerPredictions('production')
+  res.json({ ...result, ledger, triggeredAt: new Date().toISOString() })
 })
 
 // ── Shareable pick permalink ───────────────────────────────────────────────────
@@ -606,18 +615,89 @@ app.post('/api/refresh', async (req, res) => {
   runFullRefresh()
 })
 
+// ── Ledger: run deterministic proof predictions ──────────────────────────────
+app.post('/api/ledger/run', (req, res) => {
+  const stream = req.query.stream === 'research' ? 'research' : 'production'
+  const result = createPredictionsForLines(getLiveLines(), { stream, visibility: 'internal' })
+  res.json({
+    stream,
+    run: result.run,
+    created: result.predictions.length,
+    skipped: result.skipped,
+    predictionIds: result.predictions.map(p => p.id),
+    evaluationSpec: getActiveEvaluationSpec(),
+  })
+})
+
+app.get('/api/ledger/summary', (req, res) => {
+  const stream = req.query.stream === 'research' ? 'research' : 'production'
+  res.json({
+    stream,
+    chainHead: getChainHead(),
+    evaluationSpec: getActiveEvaluationSpec(),
+    summary: getLedgerSummary(stream),
+  })
+})
+
+app.get('/api/ledger/disagreement', (req, res) => {
+  const limit = Number(req.query.limit || 25)
+  const stream = req.query.stream === 'research' ? 'research' : 'production'
+  res.json({
+    stream,
+    disagreements: getPredictionDisagreement(limit, stream),
+  })
+})
+
+app.get('/api/predictions/:id', (req, res) => {
+  const prediction = getPredictionById(req.params.id)
+  if (!prediction) return res.status(404).json({ error: 'Prediction not found' })
+  res.json(prediction)
+})
+
+app.get('/api/ledger/replay/:predictionId', (req, res) => {
+  const result = verifyPrediction(req.params.predictionId)
+  if (!result.ok) return res.status(400).json(result)
+  res.json(result)
+})
+
+app.post('/api/ledger/settle', async (req, res) => {
+  const result = await settleLedgerPredictions('production')
+  res.json({ stream: 'production', ...result, evaluationSpec: getActiveEvaluationSpec() })
+})
+
+app.post('/api/ledger/anchor', async (req, res) => {
+  const anchor = await anchorChainHead()
+  res.json(anchor)
+})
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 async function boot() {
   console.log('FlexEdge EV Engine starting...')
+
+  ensureDefaultEvaluationSpec()
 
   // Load NBA player map first (needed for EV calculation)
   await refreshNBAStats()
 
   // Then run initial full refresh
   await runFullRefresh()
+  try {
+    await anchorChainHead()
+  } catch (err) {
+    console.error('[ledger] initial anchor failed:', err.message)
+  }
 
   // Start background scheduler
   startScheduler()
+
+  // Daily ledger anchor
+  cron.schedule('0 0 * * *', async () => {
+    try {
+      await anchorChainHead()
+    } catch (err) {
+      console.error('[ledger] anchor failed:', err.message)
+    }
+  })
 
   // Serve built frontend
   const distPath = path.join(__dirname, '../dist')
