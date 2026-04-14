@@ -12,16 +12,21 @@ export const useStore = create((set, get) => ({
 
   // ── Active picks (slip builder) ─────────────────────────────────────────────
   slip: [],        // picks added to current slip
+  slipFullFlash: false,
   addToSlip: (line, direction = 'over') => set((s) => {
     const existing = s.slip.find(p => p.id === line.id)
     // Same direction again = remove (toggle off)
     if (existing && existing.direction === direction) return { slip: s.slip.filter(p => p.id !== line.id) }
     // Different direction = switch
     if (existing) return { slip: s.slip.map(p => p.id === line.id ? { ...p, direction } : p) }
-    // New pick
-    if (s.slip.length >= 5) return {}  // max 5 picks
+    // Max 5 picks — flash the slip panel
+    if (s.slip.length >= 5) {
+      setTimeout(() => get().setSlipFullFlash(false), 1200)
+      return { slipFullFlash: true }
+    }
     return { slip: [...s.slip, { ...line, direction }] }
   }),
+  setSlipFullFlash: (v) => set({ slipFullFlash: v }),
   removeFromSlip: (id) => set((s) => ({ slip: s.slip.filter(p => p.id !== id) })),
   toggleDirection: (id) => set((s) => ({
     slip: s.slip.map(p => p.id === id ? { ...p, direction: p.direction === 'over' ? 'under' : 'over' } : p),

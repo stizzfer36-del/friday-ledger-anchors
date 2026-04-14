@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Zap, TrendingUp, Shield, BarChart2, CheckCircle, ArrowRight, Lock } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api'
@@ -8,16 +8,27 @@ import { clsx } from 'clsx'
 export default function Landing() {
   const { user, isPro } = useAuth()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const isNewUser = params.get('newUser') === 'true'
   const [plans, setPlans] = useState([])
   const [performance, setPerformance] = useState(null)
   const [dailySlip, setDailySlip] = useState(null)
   const [checkoutLoading, setCheckoutLoading] = useState(null)
 
   useEffect(() => {
-    api.billing.plans().then(d => setPlans(d.plans)).catch(() => {})
+    api.billing.plans().then(d => setPlans(d.plans || [])).catch(() => {})
     api.performance().then(setPerformance).catch(() => {})
     api.dailySlip().then(setDailySlip).catch(() => {})
   }, [])
+
+  // Auto-scroll to pricing section for new signups
+  useEffect(() => {
+    if (isNewUser) {
+      setTimeout(() => {
+        document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })
+      }, 400)
+    }
+  }, [isNewUser])
 
   async function handleCheckout(plan) {
     if (!user) { navigate('/login?redirect=/pricing'); return }
@@ -42,6 +53,12 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen" style={{ background: '#06090E', color: '#fff' }}>
+      {/* ── New user banner ──────────────────────────────────────────────────── */}
+      {isNewUser && (
+        <div className="bg-brand-600 text-white text-sm text-center py-2.5 px-4 font-medium">
+          Account created! Pick a plan below to unlock full EV scores and signals.
+        </div>
+      )}
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-white/5">
         <div className="flex items-center gap-2">

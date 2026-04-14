@@ -12,11 +12,28 @@ const NAV = [
   { to: '/bankroll',icon: DollarSign,      label: 'Bankroll' },
 ]
 
-export default function BottomNav() {
+export default function BottomNav({ onOpenSlip }) {
   const slip = useStore(s => s.slip)
+  const slipFullFlash = useStore(s => s.slipFullFlash)
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border-subtle bg-surface-raised">
+      {/* Slip open button — shown above nav when picks are in slip */}
+      {slip.length > 0 && (
+        <button
+          onClick={onOpenSlip}
+          className={clsx(
+            'w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-bold active:bg-brand-700 transition-colors',
+            slipFullFlash ? 'bg-negative animate-pulse' : 'bg-brand-600'
+          )}
+        >
+          {slipFullFlash
+            ? 'Slip full — max 5 picks'
+            : `View Slip · ${slip.length} pick${slip.length !== 1 ? 's' : ''}`
+          }
+        </button>
+      )}
+
       <div className="flex items-stretch">
         {NAV.map(item => (
           <NavLink
@@ -33,13 +50,6 @@ export default function BottomNav() {
           </NavLink>
         ))}
       </div>
-
-      {/* Slip indicator badge */}
-      {slip.length > 0 && (
-        <div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-          {slip.length} picks
-        </div>
-      )}
     </nav>
   )
 }

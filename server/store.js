@@ -3,7 +3,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = join(__dir, 'data')
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || join(__dir, 'data')
 const PICKS_FILE = join(DATA_DIR, 'picks.json')
 const BANKROLL_FILE = join(DATA_DIR, 'bankroll.json')
 const ALERTS_FILE = join(DATA_DIR, 'alerts.json')
@@ -26,6 +26,7 @@ const live = {
   nbaPlayerMap: {},       // name (lowercase) → { nbaId, name }
   gameLogCache: {},       // nbaId → { logs: [...], fetchedAt }
   injuryMap: {},          // playerName (lowercase) → { status, reason, updatedAt }
+  espnGames: {},          // teamAbbr → ESPN game object
   lineHistory: {},        // `${playerName}|${statType}` → [{ line, timestamp }] (last 10)
   recentLineMovements: [], // last detected movements (for alerts endpoint)
   lastRefresh: {
@@ -57,6 +58,9 @@ export function isGameLogStale(id, maxAgeMs = 6 * 60 * 60 * 1000) {
   const entry = live.gameLogCache[id]
   return !entry || Date.now() - entry.fetchedAt > maxAgeMs
 }
+
+export function setESPNGames(games) { live.espnGames = games }
+export function getESPNGames() { return live.espnGames }
 
 export function setInjuryMap(map) { live.injuryMap = map }
 export function getInjuryMap() { return live.injuryMap }

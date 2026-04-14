@@ -8,7 +8,7 @@ const POWER_PAYOUTS = { 2: 3, 3: 5, 4: 10, 5: 20 }
 const FLEX_ALL_HIT  = { 2: 3, 3: 2.25, 4: 5, 5: 10 }
 const FLEX_ONE_MISS = { 2: null, 3: 1.25, 4: 1.5, 5: 2 }
 
-export default function SlipPanel() {
+export default function SlipPanel({ onClose }) {
   const slip            = useStore(s => s.slip)
   const removeFromSlip  = useStore(s => s.removeFromSlip)
   const toggleDirection = useStore(s => s.toggleDirection)
@@ -86,7 +86,7 @@ export default function SlipPanel() {
   const riskColor = { CLEAN: 'text-positive', LOW: 'text-warning', MEDIUM: 'text-stale', HIGH: 'text-ev-fade' }
 
   return (
-    <aside className="w-64 flex-shrink-0 flex flex-col border-l border-border-subtle bg-surface-raised overflow-hidden">
+    <aside className="w-full md:w-64 flex-shrink-0 flex flex-col border-t md:border-t-0 md:border-l border-border-subtle bg-surface-raised overflow-hidden rounded-t-2xl md:rounded-none">
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
@@ -95,9 +95,16 @@ export default function SlipPanel() {
           <span className="text-brand-400">{slip.length}</span>
           <span className="text-slate-600 font-normal text-xs">/{5}</span>
         </p>
-        <button onClick={clearSlip} className="text-slate-600 hover:text-slate-300 transition-colors p-1">
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={clearSlip} className="text-slate-600 hover:text-slate-300 transition-colors p-1">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+          {onClose && (
+            <button onClick={onClose} className="md:hidden text-slate-600 hover:text-slate-300 transition-colors p-1 ml-1">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Power / Flex toggle */}

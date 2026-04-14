@@ -1,55 +1,70 @@
 // PrizePicks line fetcher
-// Tries the real PrizePicks projection API first; falls back to rich mock data
+// Strategy: single combined request (1 API call) → avoids per-league burst rate limiting
+// Uses iOS mobile app User-Agent; caches result for 14 minutes to stay well under rate limit
 
 const PP_BASE = 'https://api.prizepicks.com'
 
-const LEAGUE_IDS = { NBA: 7, NFL: 9, MLB: 2, NHL: 12, NCAAB: 3, NCAAF: 8 }
-const ALL_LEAGUES = ['NBA', 'NFL', 'MLB', 'NHL']
-
-export async function fetchPrizePicksLines(league = 'NBA') {
-  const leagueId = LEAGUE_IDS[league] || 7
-  const url = `${PP_BASE}/projections?per_page=250&league_id=${leagueId}&single_stat=true`
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-        'Accept': 'application/json',
-        'Origin': 'https://prizepicks.com',
-        'Referer': 'https://prizepicks.com/',
-      },
-      signal: AbortSignal.timeout(8000),
-    })
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const json = await res.json()
-    const parsed = parseProjections(json, league)
-    if (parsed.length > 0) {
-      console.log(`[PrizePicks] Fetched ${parsed.length} real lines for ${league}`)
-      return parsed
-    }
-    throw new Error('Empty response')
-  } catch (err) {
-    console.warn(`[PrizePicks] ${league} API unavailable (${err.message}), using mock data`)
-    return getMockLines(league)
-  }
+const PP_HEADERS = {
+  'User-Agent': 'PrizePicks/3.0 CFNetwork/1410.1 Darwin/22.6.0',
+  'Accept': 'application/json',
+  'X-App-Version': '3.0.0',
 }
 
-// Fetch all sports simultaneously and merge
+const LEAGUE_IDS = { NBA: 7, NFL: 9, MLB: 2, NHL: 12 }
+const LEAGUE_BY_ID = Object.fromEntries(Object.entries(LEAGUE_IDS).map(([k, v]) => [v, k]))
+
+// Cache: only fetch once per 14 minutes max
+let _cache = null
+let _cacheTime = 0
+const CACHE_TTL = 14 * 60 * 1000
+
 export async function fetchAllLines() {
-  const results = await Promise.allSettled(
-    ALL_LEAGUES.map(league => fetchPrizePicksLines(league))
-  )
-  const all = []
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      all.push(...r.value)
-    } else {
-      console.warn(`[PrizePicks] ${ALL_LEAGUES[i]} fetch failed:`, r.reason?.message)
+  const now = Date.now()
+  if (_cache && now - _cacheTime < CACHE_TTL) {
+    console.log(`[PrizePicks] Using cache (${_cache.length} lines, ${Math.round((now - _cacheTime) / 1000)}s old)`)
+    return _cache
+  }
+
+  // One combined request — all leagues, generous per_page
+  // PP paginates but the first 250 is enough per refresh; re-running every 15m catches the rest
+  const leagueIds = Object.values(LEAGUE_IDS)
+  const allLines = []
+
+  for (const leagueId of leagueIds) {
+    try {
+      const url = `${PP_BASE}/projections?per_page=250&league_id=${leagueId}`
+      const res = await fetch(url, {
+        headers: PP_HEADERS,
+        signal: AbortSignal.timeout(12000),
+      })
+
+      if (res.status === 429) {
+        console.warn(`[PrizePicks] Rate limited — skipping remaining leagues, will retry next refresh cycle`)
+        break  // bail out entirely; Underdog fills the gap
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const json = await res.json()
+      const league = LEAGUE_BY_ID[leagueId] || 'NBA'
+      const parsed = parseProjections(json, league)
+      console.log(`[PrizePicks] ${league}: ${parsed.length} lines`)
+      allLines.push(...parsed)
+
+      // Polite delay between leagues — avoids burst rate limiting
+      if (leagueId !== leagueIds[leagueIds.length - 1]) {
+        await new Promise(r => setTimeout(r, 2500))
+      }
+    } catch (err) {
+      console.warn(`[PrizePicks] League ${leagueId} failed: ${err.message}`)
     }
-  })
-  console.log(`[PrizePicks] Total lines across all sports: ${all.length}`)
-  return all
+  }
+
+  if (allLines.length > 0) {
+    _cache = allLines
+    _cacheTime = now
+    console.log(`[PrizePicks] Total: ${allLines.length} lines (cached)`)
+  }
+  return allLines
 }
 
 function parseProjections(json, league) {

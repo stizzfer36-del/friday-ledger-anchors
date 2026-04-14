@@ -2,7 +2,9 @@
 // Keeps lines, injuries, and NBA stats fresh automatically
 
 import cron from 'node-cron'
-import { fetchAllLines } from './prizepicks.js'
+import { fetchAllLines as fetchPrizePicksAll } from './prizepicks.js'
+import { fetchUnderdogLines } from './underdog.js'
+import { fetchAllESPNGames } from './espn.js'
 import { fetchNBAPlayerMap } from './nbaStats.js'
 import { fetchInjuryMap } from './espnInjuries.js'
 import { enrichLines } from './evEngine.js'
@@ -13,7 +15,21 @@ import {
   setNBAPlayerMap,
   setInjuryMap,
   setLastRefresh,
+  setESPNGames,
 } from '../store.js'
+
+// ── SSE client registry ───────────────────────────────────────────────────────
+const sseClients = new Set()
+
+export function addSSEClient(res) { sseClients.add(res) }
+export function removeSSEClient(res) { sseClients.delete(res) }
+
+function pushSSE(event) {
+  const payload = `data: ${JSON.stringify(event)}\n\n`
+  for (const client of sseClients) {
+    try { client.write(payload) } catch { sseClients.delete(client) }
+  }
+}
 
 // Track previous line snapshot for movement detection
 let previousLineSnapshot = {}  // id → line value
@@ -29,12 +45,39 @@ export async function runFullRefresh() {
   try {
     console.log('[scheduler] Starting full refresh...')
 
-    const [rawLines, injuries] = await Promise.all([
-      fetchAllLines(),
+    // Fetch all sources in parallel — PrizePicks primary, Underdog fills gaps
+    const [ppResult, udResult, injuries, espnGames] = await Promise.allSettled([
+      fetchPrizePicksAll(),
+      fetchUnderdogLines(),
       fetchInjuryMap(),
+      fetchAllESPNGames(),
     ])
 
-    setInjuryMap(injuries)
+    // Merge: PP is primary source of truth; Underdog adds any lines PP missed
+    const ppLines = ppResult.status === 'fulfilled' ? ppResult.value : []
+    const udLines = udResult.status === 'fulfilled' ? udResult.value : []
+
+    if (ppLines.length > 0) {
+      console.log(`[scheduler] PrizePicks: ${ppLines.length} lines`)
+    } else {
+      console.warn('[scheduler] PrizePicks unavailable — using Underdog only')
+    }
+
+    // Deduplicate: use PP line if same player+stat exists in both, else keep all
+    const ppKey = l => `${l.playerName.toLowerCase()}|${l.statType.toLowerCase()}`
+    const ppKeys = new Set(ppLines.map(ppKey))
+    const udUnique = udLines.filter(l => !ppKeys.has(ppKey(l)))
+    const rawLines = [...ppLines, ...udUnique]
+
+    console.log(`[scheduler] Combined: ${rawLines.length} lines (PP: ${ppLines.length}, UD-only: ${udUnique.length})`)
+
+    if (espnGames.status === 'fulfilled') {
+      setESPNGames(espnGames.value)
+    }
+
+    const mergedInjuries = injuries.status === 'fulfilled' ? injuries.value : {}
+
+    setInjuryMap(mergedInjuries)
     setLastRefresh('injuries')
 
     const enriched = await enrichLines(rawLines)
@@ -48,8 +91,11 @@ export async function runFullRefresh() {
     // Regenerate daily slip after every line refresh
     generateDailySlip()
 
+    // Push real-time update to all connected SSE clients
+    pushSSE({ type: 'lines', count: enriched.length, ts: Date.now() })
+
     const elapsed = Date.now() - start
-    console.log(`[scheduler] Refresh complete — ${enriched.length} lines in ${elapsed}ms`)
+    console.log(`[scheduler] Refresh complete — ${enriched.length} lines in ${elapsed}ms (${sseClients.size} SSE clients notified)`)
   } catch (err) {
     console.error('[scheduler] Refresh failed:', err.message)
   } finally {
@@ -103,37 +149,32 @@ export async function refreshInjuries() {
 
 // ── Start all scheduled jobs ──────────────────────────────────────────────────
 export function startScheduler() {
-  // Full line refresh every 15 minutes
-  cron.schedule('*/15 * * * *', () => {
-    console.log('[scheduler] Cron: full refresh')
+  // Full line refresh every 2 minutes — Underdog has no rate limit, PP uses internal cache
+  cron.schedule('*/2 * * * *', () => {
     runFullRefresh()
   })
 
-  // Injury-only refresh every 8 minutes
-  cron.schedule('*/8 * * * *', () => {
-    console.log('[scheduler] Cron: injury check')
+  // Injury refresh every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
     refreshInjuries()
   })
 
   // NBA player map refresh every hour
   cron.schedule('0 * * * *', () => {
-    console.log('[scheduler] Cron: NBA player map')
     refreshNBAStats()
   })
 
-  // Auto-settle pending picks every hour (checks for completed games)
+  // Auto-settle pending picks every hour
   cron.schedule('5 * * * *', () => {
-    console.log('[scheduler] Cron: auto-settlement')
     settlePendingPicks()
   })
 
   // Daily slip fresh generation at 8am
   cron.schedule('0 8 * * *', () => {
-    console.log('[scheduler] Cron: daily slip generation')
     generateDailySlip()
   })
 
-  console.log('[scheduler] Scheduled jobs started')
+  console.log('[scheduler] Scheduled jobs started (2min refresh, SSE push enabled)')
 }
 
 // ── Line movement detection ───────────────────────────────────────────────────
@@ -160,10 +201,11 @@ export function detectLineMovements(newLines) {
 
   if (moved.length > 0) {
     console.log(`[scheduler] ${moved.length} line movements detected`)
-    // Store movements for the alerts endpoint
     import('../store.js').then(({ setLineMovementAlerts }) => {
       if (setLineMovementAlerts) setLineMovementAlerts(moved)
     }).catch(() => {})
+    // Push movement alert to all SSE clients immediately
+    pushSSE({ type: 'movements', count: moved.length, ts: Date.now() })
   }
 
   return moved

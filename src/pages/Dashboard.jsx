@@ -56,14 +56,14 @@ export default function Dashboard() {
   const slipIds = new Set(slip.map(s => s.id))
 
   return (
-    <div className="flex gap-5 h-full">
+    <div className="flex gap-5 h-full min-w-0">
 
       {/* ── Left: card lobby ─────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
 
         {/* Sport tabs + filter toggle */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-1 bg-surface-elevated rounded-lg p-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-1 bg-surface-elevated rounded-lg p-1 overflow-x-auto scrollbar-none">
             {SPORT_TABS.map(s => {
               const active = sport === s
               const dot    = SPORT_DOT[s]
@@ -110,7 +110,7 @@ export default function Dashboard() {
 
         {/* Card grid */}
         {linesLoading && lines.length === 0 ? (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="card h-48 animate-pulse bg-surface-elevated" />
             ))}
@@ -120,7 +120,7 @@ export default function Dashboard() {
             <p className="text-sm">No picks match this filter</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {visibleLines.map(line => (
               <PickCard
                 key={line.id}

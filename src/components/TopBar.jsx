@@ -58,9 +58,36 @@ export default function TopBar({ onToggleSidebar }) {
   useEffect(() => {
     loadLines()
     checkAlerts()
-    const linesInterval = setInterval(loadLines, 120000)
-    const alertsInterval = setInterval(checkAlerts, 300000)
-    return () => { clearInterval(linesInterval); clearInterval(alertsInterval) }
+
+    // SSE — server pushes when lines change (instant updates)
+    let es
+    let sseRetryTimeout
+    function connectSSE() {
+      es = new EventSource('/api/lines/stream')
+      es.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.type === 'lines') loadLines()
+        } catch {}
+      }
+      es.onerror = () => {
+        es.close()
+        // Reconnect after 5s on error
+        sseRetryTimeout = setTimeout(connectSSE, 5000)
+      }
+    }
+    connectSSE()
+
+    // 15-second fallback poll (catches any missed SSE events)
+    const fallbackInterval = setInterval(loadLines, 15000)
+    const alertsInterval   = setInterval(checkAlerts, 60000)
+
+    return () => {
+      es?.close()
+      clearTimeout(sseRetryTimeout)
+      clearInterval(fallbackInterval)
+      clearInterval(alertsInterval)
+    }
   }, [])
 
   const title = TITLES[location.pathname] || 'FlexEdge'

@@ -29,7 +29,7 @@ export default function Login() {
       } else {
         await register(email, password)
       }
-      navigate(redirect, { replace: true })
+      navigate(mode === 'register' ? '/pricing?newUser=true' : redirect, { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {

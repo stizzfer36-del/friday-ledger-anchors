@@ -1,6 +1,9 @@
 import express from 'express'
 import cors from 'cors'
 import { v4 as uuidv4 } from 'uuid'
+import path from 'path'
+import { fileURLToPath } from 'url'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Initialize DB before any model imports
 import { db as importedDb } from './models/db.js'
@@ -46,7 +49,7 @@ import {
   getNBAPlayerMap,
   getGameLogCache,
 } from './store.js'
-import { runFullRefresh, refreshNBAStats, startScheduler } from './services/scheduler.js'
+import { runFullRefresh, refreshNBAStats, startScheduler, addSSEClient, removeSSEClient } from './services/scheduler.js'
 import { buildOptimalSlip } from './services/autoSlip.js'
 
 const app = express()
@@ -54,7 +57,10 @@ const PORT = process.env.PORT || 5000
 
 app.use(cors())
 app.use(express.json())
-app.use(rateLimit(120, 60000)) // 120 req/min per IP
+app.use((req, res, next) => {
+  if (req.path === '/api/lines/stream') return next() // SSE exempt from rate limit
+  return rateLimit(120, 60000)(req, res, next)
+})
 
 // ── Stripe webhook (must be raw body before express.json()) ──────────────────
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook)
@@ -65,6 +71,30 @@ app.use('/api/user/picks', userPicksRoutes)
 app.use('/api/user/bankroll', userBankrollRoutes)
 app.use('/api/billing', billingRoutes)
 app.use('/api/push', pushRoutes)
+
+// ── SSE: real-time line updates ───────────────────────────────────────────────
+app.get('/api/lines/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  // Send current snapshot immediately on connect
+  const lines = getLiveLines()
+  res.write(`data: ${JSON.stringify({ type: 'lines', count: lines.length, ts: Date.now() })}\n\n`)
+
+  // Heartbeat every 10 seconds to keep connection alive through proxies
+  const heartbeat = setInterval(() => {
+    res.write(`: heartbeat\n\n`)
+  }, 10000)
+
+  addSSEClient(res)
+  req.on('close', () => {
+    clearInterval(heartbeat)
+    removeSSEClient(res)
+  })
+})
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -97,24 +127,13 @@ app.get('/api/lines', optionalAuth, (req, res) => {
     )
   }
 
-  // Strip EV data for free / unauthenticated users — show only first 5 lines
-  const isPro = req.user && (req.user.tier === 'pro' || req.user.tier === 'elite')
-  if (!isPro) {
-    lines = lines.slice(0, 5).map(l => ({
-      id: l.id, playerName: l.playerName, team: l.team, sport: l.sport,
-      statType: l.statType, line: l.line, startTime: l.startTime,
-      minutesToGame: l.minutesToGame, injury: l.injury,
-      _locked: true,  // signals frontend to show upgrade prompt
-    }))
-  }
-
   res.json({
     data: lines,
     meta: {
       total: lines.length,
       lastRefresh: getLastRefresh(),
       generatedAt: new Date().toISOString(),
-      tier: req.user?.tier || 'free',
+      tier: 'open',
     },
   })
 })
@@ -599,6 +618,13 @@ async function boot() {
 
   // Start background scheduler
   startScheduler()
+
+  // Serve built frontend
+  const distPath = path.join(__dirname, '../dist')
+  app.use(express.static(distPath))
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
 
   app.listen(PORT, () => {
     console.log(`FlexEdge API running on port ${PORT}`)
